@@ -1,0 +1,10 @@
+{
+  "description": "Provides easy access to digital equipment operation instructions organized by space, helping users quickly find guidance for classrooms, meeting rooms, and halls.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
