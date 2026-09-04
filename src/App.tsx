@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 
 interface Step {
   instruction: string;
@@ -294,7 +294,71 @@ function CategoryBadge({ category }: { category: string }) {
   );
 }
 
-function HomeView({ onSelectSpace }: { onSelectSpace: (id: string) => void }) {
+function highlight(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)", borderRadius: 2, padding: "0 2px" }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+interface SearchResult {
+  space: Space;
+  matchedDevices: Device[];
+  matchType: "space" | "device";
+}
+
+function useSearch(query: string): SearchResult[] {
+  return useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return spaces.map((s) => ({ space: s, matchedDevices: [], matchType: "space" as const }));
+    const results: SearchResult[] = [];
+    for (const space of spaces) {
+      const spaceMatch =
+        space.name.toLowerCase().includes(q) ||
+        space.category.toLowerCase().includes(q) ||
+        space.description.toLowerCase().includes(q);
+      const matchedDevices = space.devices.filter((d) => d.name.toLowerCase().includes(q));
+      if (spaceMatch || matchedDevices.length > 0) {
+        results.push({
+          space,
+          matchedDevices: spaceMatch ? [] : matchedDevices,
+          matchType: spaceMatch ? "space" : "device",
+        });
+      }
+    }
+    return results;
+  }, [query]);
+}
+
+function HomeView({ onSelectSpace }: { onSelectSpace: (id: string, deviceId?: string) => void }) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const results = useSearch(query);
+  const isFiltering = query.trim().length > 0;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      if (e.key === "Escape") {
+        setQuery("");
+        inputRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
     <div className="min-h-full">
       {/* Top bar */}
@@ -320,82 +384,186 @@ function HomeView({ onSelectSpace }: { onSelectSpace: (id: string) => void }) {
         </div>
       </header>
 
-      {/* Hero */}
-      <div style={{ backgroundColor: "var(--secondary)" }} className="pb-16 pt-12">
-        <div className="max-w-6xl mx-auto px-6">
+      {/* Hero + search */}
+      <div className="relative pb-10 pt-12 overflow-hidden" style={{ backgroundColor: "var(--secondary)" }}>
+        {/* Background image */}
+        <img
+          src="https://images.unsplash.com/photo-1714846973752-deba7a841e13?w=1600&h=600&fit=crop&auto=format"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover opacity-20"
+          style={{ mixBlendMode: "luminosity" }}
+        />
+        {/* Gradient vignette for extra legibility */}
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(15,23,42,0.85) 40%, rgba(15,23,42,0.4) 100%)" }} />
+        <div className="relative max-w-6xl mx-auto px-6">
           <p style={{ color: "var(--primary)", fontFamily: "'DM Mono', monospace" }} className="text-xs font-medium tracking-widest uppercase mb-4">
             Operations Manual
           </p>
           <h1
             style={{ fontFamily: "'Instrument Serif', serif", color: "#f8fafc" }}
-            className="text-4xl sm:text-5xl font-normal leading-tight mb-4 max-w-xl"
+            className="text-4xl sm:text-5xl font-normal leading-tight mb-4 whitespace-nowrap"
           >
-            Equipment<br />
-            <em>Operation Guides</em>
+            Equipment <em>Operation Guides</em>
           </h1>
-          <p style={{ color: "#94a3b8" }} className="text-base max-w-md leading-relaxed">
+          <p style={{ color: "#94a3b8" }} className="text-base leading-relaxed mb-8 whitespace-nowrap">
             Select a space below to view step-by-step instructions for operating AV and digital equipment.
           </p>
+
+          {/* Search bar */}
+          <div className="relative max-w-lg" style={{ zIndex: 1 }}>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: "#64748b" }}
+            >
+              <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search spaces or devices…"
+              className="w-full pl-10 pr-24 py-3 text-sm rounded-xl focus:outline-none transition-all duration-150"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                color: "#f8fafc",
+                caretColor: "var(--primary)",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.12)";
+                e.currentTarget.style.border = "1px solid var(--primary)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.08)";
+                e.currentTarget.style.border = "1px solid rgba(255,255,255,0.12)";
+              }}
+            />
+            {query ? (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs px-2 py-1 rounded-md transition-colors"
+                style={{ color: "#94a3b8" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#f8fafc")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#94a3b8")}
+              >
+                Clear
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            ) : (
+              <kbd
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-2 py-1 rounded-md hidden sm:block"
+                style={{ color: "#64748b", backgroundColor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", fontFamily: "'DM Mono', monospace" }}
+              >
+                ⌘K
+              </kbd>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Space cards */}
-      <div className="max-w-6xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {spaces.map((space) => (
-            <button
-              key={space.id}
-              onClick={() => onSelectSpace(space.id)}
-              className="text-left group rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-1 focus:outline-none"
-              style={{
-                backgroundColor: "var(--card)",
-                border: "1px solid var(--border)",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-              onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 0 3px var(--ring)")}
-              onBlur={(e) => (e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)")}
-            >
-              {/* Photo */}
-              <div className="relative overflow-hidden bg-slate-200" style={{ height: 180 }}>
-                <img
-                  src={space.photo}
-                  alt={space.name}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-                <div className="absolute bottom-3 left-3">
-                  <CategoryBadge category={space.category} />
+      {/* Results */}
+      <div className="max-w-6xl mx-auto px-6 py-10">
+        {isFiltering && (
+          <p style={{ color: "var(--muted-foreground)", fontFamily: "'DM Mono', monospace" }} className="text-xs mb-6">
+            {results.length === 0
+              ? "No results"
+              : `${results.length} space${results.length !== 1 ? "s" : ""} found for "${query}"`}
+          </p>
+        )}
+
+        {results.length === 0 && isFiltering ? (
+          <div className="text-center py-20">
+            <p style={{ fontFamily: "'Instrument Serif', serif", color: "var(--foreground)" }} className="text-2xl mb-2">Nothing found</p>
+            <p style={{ color: "var(--muted-foreground)" }} className="text-sm">
+              Try searching for a space name, category, or device — e.g. "projector", "hall", "Teams"
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {results.map(({ space, matchedDevices }) => (
+              <button
+                key={space.id}
+                onClick={() => onSelectSpace(space.id, matchedDevices[0]?.id)}
+                className="text-left group rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-1 focus:outline-none"
+                style={{
+                  backgroundColor: "var(--card)",
+                  border: "1px solid var(--border)",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                }}
+                onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 0 3px var(--ring)")}
+                onBlur={(e) => (e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)")}
+              >
+                {/* Photo */}
+                <div className="relative overflow-hidden bg-slate-200" style={{ height: 180 }}>
+                  <img
+                    src={space.photo}
+                    alt={space.name}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                  <div className="absolute bottom-3 left-3">
+                    <CategoryBadge category={space.category} />
+                  </div>
                 </div>
-              </div>
-              {/* Content */}
-              <div className="p-5">
-                <h2
-                  style={{ fontFamily: "'Instrument Serif', serif", color: "var(--foreground)" }}
-                  className="text-xl font-normal mb-1.5"
-                >
-                  {space.name}
-                </h2>
-                <p style={{ color: "var(--muted-foreground)" }} className="text-sm leading-relaxed mb-4">
-                  {space.description}
-                </p>
-                <div className="flex items-center justify-between">
-                  <span style={{ color: "var(--muted-foreground)", fontFamily: "'DM Mono', monospace" }} className="text-xs">
-                    {space.devices.length} device{space.devices.length !== 1 ? "s" : ""}
-                  </span>
-                  <span
-                    style={{ color: "var(--primary)" }}
-                    className="text-xs font-medium flex items-center gap-1 group-hover:gap-2 transition-all"
+                {/* Content */}
+                <div className="p-5">
+                  <h2
+                    style={{ fontFamily: "'Instrument Serif', serif", color: "var(--foreground)" }}
+                    className="text-xl font-normal mb-1.5"
                   >
-                    View guide
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
+                    {highlight(space.name, query)}
+                  </h2>
+                  <p style={{ color: "var(--muted-foreground)" }} className="text-sm leading-relaxed mb-4">
+                    {highlight(space.description, query)}
+                  </p>
+
+                  {/* Matched devices highlight strip */}
+                  {matchedDevices.length > 0 && (
+                    <div
+                      className="mb-4 px-3 py-2 rounded-lg flex flex-wrap gap-2"
+                      style={{ backgroundColor: "var(--muted)" }}
+                    >
+                      {matchedDevices.map((d) => (
+                        <span
+                          key={d.id}
+                          className="flex items-center gap-1.5 text-xs font-medium"
+                          style={{ color: "var(--primary)" }}
+                        >
+                          <span>{d.icon}</span>
+                          {highlight(d.name, query)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: "var(--muted-foreground)", fontFamily: "'DM Mono', monospace" }} className="text-xs">
+                      {space.devices.length} device{space.devices.length !== 1 ? "s" : ""}
+                    </span>
+                    <span
+                      style={{ color: "var(--primary)" }}
+                      className="text-xs font-medium flex items-center gap-1 group-hover:gap-2 transition-all"
+                    >
+                      {matchedDevices.length > 0 ? "Open device" : "View guide"}
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </button>
-          ))}
-        </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -414,11 +582,19 @@ function HomeView({ onSelectSpace }: { onSelectSpace: (id: string) => void }) {
   );
 }
 
-function DeviceAccordion({ device }: { device: Device }) {
-  const [open, setOpen] = useState(false);
+function DeviceAccordion({ device, defaultOpen = false }: { device: Device; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (defaultOpen && ref.current) {
+      setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    }
+  }, [defaultOpen]);
 
   return (
     <div
+      ref={ref}
       style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)" }}
       className="overflow-hidden"
     >
@@ -501,7 +677,7 @@ function DeviceAccordion({ device }: { device: Device }) {
   );
 }
 
-function SpaceView({ space, onBack }: { space: Space; onBack: () => void }) {
+function SpaceView({ space, onBack, openDeviceId }: { space: Space; onBack: () => void; openDeviceId?: string }) {
   return (
     <div className="min-h-full">
       {/* Top bar */}
@@ -558,7 +734,7 @@ function SpaceView({ space, onBack }: { space: Space; onBack: () => void }) {
 
         <div className="space-y-3">
           {space.devices.map((device) => (
-            <DeviceAccordion key={device.id} device={device} />
+            <DeviceAccordion key={device.id} device={device} defaultOpen={device.id === openDeviceId} />
           ))}
         </div>
 
@@ -582,15 +758,26 @@ function SpaceView({ space, onBack }: { space: Space; onBack: () => void }) {
 
 export default function App() {
   const [currentSpaceId, setCurrentSpaceId] = useState<string | null>(null);
+  const [openDeviceId, setOpenDeviceId] = useState<string | undefined>(undefined);
 
   const currentSpace = spaces.find((s) => s.id === currentSpaceId) ?? null;
+
+  function handleSelectSpace(id: string, deviceId?: string) {
+    setCurrentSpaceId(id);
+    setOpenDeviceId(deviceId);
+  }
+
+  function handleBack() {
+    setCurrentSpaceId(null);
+    setOpenDeviceId(undefined);
+  }
 
   return (
     <div className="size-full overflow-y-auto" style={{ backgroundColor: "var(--background)" }}>
       {currentSpace ? (
-        <SpaceView space={currentSpace} onBack={() => setCurrentSpaceId(null)} />
+        <SpaceView space={currentSpace} onBack={handleBack} openDeviceId={openDeviceId} />
       ) : (
-        <HomeView onSelectSpace={setCurrentSpaceId} />
+        <HomeView onSelectSpace={handleSelectSpace} />
       )}
     </div>
   );
